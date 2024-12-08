@@ -70,7 +70,7 @@ void setup() {
 
 void loop() {
   // Check if system has started
-  if (millis() - previousStartTime >= 10000) {
+  if (millis() - previousStartTime >= 5000) {
     rpmRight = encoderRight.calculateRPM();
     rpmLeft = encoderLeft.calculateRPM();
     calculateDistance(rpmRight);
@@ -95,17 +95,19 @@ void loop() {
 
     // Drive motors until total distance is reached
     if (totalDistance < 5) {  // Distance in meters
-      SetpointLeft = 390;  // Target RPM
-      SetpointRight = 390;
 
-      pidMotorRight.Compute();
-      pidMotorLeft.Compute();
 
-      motorLeft.setMotorSpeed(OutputLeft);
-      motorRight.setMotorSpeed(OutputRight);
-    } else {
+      motorLeft.setMotorSpeed(65);
+      motorRight.setMotorSpeed(70);
+    } else if(totalDistance < 5+3.14){
+      motorLeft.setMotorSpeed(98);
+      motorRight.setMotorSpeed(70);
+    }else if(totalDistance < 5+3.14+5){ 
+      motorLeft.setMotorSpeed(65);
+      motorRight.setMotorSpeed(70);   
+    }else{
       motorLeft.setMotorSpeed(0);
-      motorRight.setMotorSpeed(0);
+      motorRight.setMotorSpeed(0);     
     }
   }
 }
