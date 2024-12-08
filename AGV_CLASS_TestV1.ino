@@ -1,8 +1,9 @@
-// import library ที่ใช้ในงานนี้
+// Import libraries
+#include <PID_v1_bc.h>
 #include "ControlMotor.h"
 #include "encoder.h"
 
-//ประกาศPin ที่ใช้ในการเชื่อมต่อกับบอร์ด esp32
+// Pin definitions
 #define ENA 4
 #define pin1 16
 #define pin2 17
@@ -12,72 +13,99 @@
 #define encoderLeftPin 35
 #define encoderRightPin 23
 
-// สร้าง object ให้กับ class
+// PID variables
+double SetpointRight, InputRight, OutputRight;
+double SetpointLeft, InputLeft, OutputLeft;
+double KpLeft = 2.25, KiLeft = 1.47, KdLeft = 0.07;
+double KpRight = 0.94, KiRight = 0.39, KdRight = 0.09;
+
+// Speed and distance variables
+float totalDistance = 0;          // Cumulative distance
+unsigned long lastCalculationTime = 0;
+double rpmRight = 0;              // RPM of right motor
+double rpmLeft = 0;               // RPM of left motor
+
+// Timing variables
+unsigned long previousTime = 0;
+unsigned long previousStartTime = 0;
+bool started = false;
+
+// Constants
+const float wheelRadius = 0.034;  // Wheel radius in meters
+
+// Create objects
 ControlMotor motorLeft(pin1, pin2, ENA);
 ControlMotor motorRight(pin3, pin4, ENB);
 Encoder encoderLeft(encoderLeftPin, 20);
 Encoder encoderRight(encoderRightPin, 20);
+PID pidMotorRight(&InputRight, &OutputRight, &SetpointRight, KpRight, KiRight, KdRight, DIRECT);
+PID pidMotorLeft(&InputLeft, &OutputLeft, &SetpointLeft, KpLeft, KiLeft, KdLeft, DIRECT);
 
-//ตัวแปรสำหรับเก็บค่าระยะทางและความเร็ว
-float distance = 0;
-double rpmRight = 0;
-double rpmLeft = 0;
-
-// ตัวแปรสำหรับการแสดงผล
-unsigned long previousTime = 0;
-
-// ตัวแปรสำหรับการหน่วงเวลาก่อนการทำงาน
-unsigned long previousStartTime = 0;
-bool started = false;  // ตัวแปรเช็คว่าเริ่มทำงานหรือยัง
-
-// กำหนดค่าคงที่ที่ใช้ในการคำนวณระยะทาง
-const float wheelRadius = 0.034;        // รัศมีล้อในหน่วยเมตร
-float totalDistance = 0;                // ระยะทางสะสม
-unsigned long lastCalculationTime = 0;  // เวลาสุดท้ายที่คำนวณระยะทาง
-
-
-// ฟังก์ชันสำหรับคำนวณระยะทางสะสม
+// Distance calculation function
 void calculateDistance(float rpm) {
-
   unsigned long currentCaldisTime = millis();
-  float distance = 0;  // ตัวแปรสำหรับเก็บระยะทางในช่วงเวลานั้น
-
-  // ตรวจสอบว่าถึงเวลาในการคำนวณใหม่หรือยัง
   if (currentCaldisTime - lastCalculationTime >= 100) {
-    lastCalculationTime = currentCaldisTime;                     // อัปเดตเวลา
-    float angularVelocity = (rpm * 2 * PI) / 60.0;         // คำนวณความเร็วเชิงมุม (rad/s)
-    float linearVelocity = angularVelocity * wheelRadius;  // คำนวณความเร็วเชิงเส้น (m/s)
-    distance = linearVelocity * (100 / 1000.0);            // คำนวณระยะทางในช่วงเวลานั้น (m)
-    totalDistance += distance;                             // เพิ่มระยะทางที่คำนวณได้ในระยะทางสะสม
+    lastCalculationTime = currentCaldisTime;
+    float angularVelocity = (rpm * 2 * PI) / 60.0;  // Angular velocity in rad/s
+    float linearVelocity = angularVelocity * wheelRadius;  // Linear velocity in m/s
+    float distance = linearVelocity * (100 / 1000.0);  // Distance in meters
+    totalDistance += distance;  // Update total distance
   }
 }
 
 void setup() {
-  Serial.begin(115200);  // เริ่มต้น Serial Monitor ด้วย baud rate 115200 เพื่อใช้สำหรับการแสดงผลข้อมูล
-  encoderLeft.begin();   // เริ่มต้นตัวอ่านค่าการเข้ารหัส (encoder) สำหรับการตรวจจับการหมุน
+  Serial.begin(115200);  // Start Serial Monitor
+  encoderLeft.begin();   // Initialize encoders
   encoderRight.begin();
+
+  // Initialize PID controllers
+  pidMotorRight.SetMode(AUTOMATIC);
+  pidMotorRight.SetOutputLimits(0, 100);  // PWM range 0-100%
+  pidMotorRight.SetSampleTime(100);       // Update every 100 ms
+
+  pidMotorLeft.SetMode(AUTOMATIC);
+  pidMotorLeft.SetOutputLimits(0, 100);  // PWM range 0-100%
+  pidMotorLeft.SetSampleTime(100);       // Update every 100 ms
 }
 
-
 void loop() {
-
+  // Check if system has started
   if (millis() - previousStartTime >= 10000) {
-
-    rpmRight = encoderRight.calculateRPM();  // คำนวณรอบต่อนาที (RPM) จากตัวอ่านค่า encoder
-    rpmLeft = encoderLeft.calculateRPM();    // คำนวณรอบต่อนาที (RPM) จากตัวอ่านค่า encoder
-
-    motorRight.setMotorSpeed(100);
-    motorLeft.setMotorSpeed(100);
+    rpmRight = encoderRight.calculateRPM();
+    rpmLeft = encoderLeft.calculateRPM();
     calculateDistance(rpmRight);
 
+    InputRight = rpmRight;
+    InputLeft = rpmLeft;
+
+    // Log RPM and distance every 100 ms
     if (millis() - previousTime >= 100) {
       previousTime = millis();
       Serial.print("Left RPM: ");
-      Serial.println(rpmLeft);  // แสดงค่าของ RPM ใน Serial Monitor
+      Serial.println(rpmLeft);
       Serial.print("Right RPM: ");
-      Serial.println(rpmRight);  // แสดงค่าของ RPM ใน Serial Monitor
-      Serial.print("distance");
+      Serial.println(rpmRight);
+      Serial.print("Distance (m): ");
       Serial.println(totalDistance);
+      // Serial.print("outputleft : ");
+      // Serial.println(OutputLeft);
+      // Serial.print("output right");
+      // Serial.println(OutputRight);
+    }
+
+    // Drive motors until total distance is reached
+    if (totalDistance < 5) {  // Distance in meters
+      SetpointLeft = 390;  // Target RPM
+      SetpointRight = 390;
+
+      pidMotorRight.Compute();
+      pidMotorLeft.Compute();
+
+      motorLeft.setMotorSpeed(OutputLeft);
+      motorRight.setMotorSpeed(OutputRight);
+    } else {
+      motorLeft.setMotorSpeed(0);
+      motorRight.setMotorSpeed(0);
     }
   }
 }
